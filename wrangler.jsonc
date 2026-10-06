@@ -12,6 +12,7 @@
     {
       "binding": "DB",
       "database_name": "cffk_db",
+      "database_id": "5f893bc3-20f9-4fd7-adfe-dc0d714944db",  
       "migrations_dir": "database/migrations"
     }
   ],
