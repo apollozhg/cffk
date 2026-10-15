@@ -20,14 +20,14 @@ function getApp() {
     if (context.req.path.startsWith("/api/")) return context.json({ code: "INTERNAL_ERROR", message: "接口异常，请稍后重试。", data: null }, 500);
     return context.text("Internal Server Error", 500);
   });
-  for (const [provider, path] of [["ALIPAY", "/api/payments/alipay/notify"], ["EPAY", "/api/payments/epay/notify"], ["BEPUSDT", "/api/payments/bepusdt/notify"], ["STRIPE", "/api/payments/stripe/notify"], ["HASHPAY", "/api/payments/hashpay/notify"], ["PERPAY", "/api/payments/perpay/notify"]] as const) {
+  for (const [provider, path] of [["ALIPAY", "/api/payments/alipay/notify"], ["EPAY", "/api/payments/epay/notify"], ["BEPUSDT", "/api/payments/bepusdt/notify"], ["STRIPE", "/api/payments/stripe/notify"], ["HASHPAY", "/api/payments/hashpay/notify"], ["PERPAY", "/api/payments/perpay/notify"], ["WXPAY", "/api/payments/wxpay/notify"]] as const) {
     const handlePaymentCallback = async (context: Context<{ Bindings: Record<string, unknown> & { DB: D1Database } }>) => {
       const contentLength = Number(context.req.header("content-length"));
       if (Number.isFinite(contentLength) && contentLength > MAX_PAYMENT_CALLBACK_BYTES) {
         await new PaymentLogService(context.env.DB).writeBestEffort({ provider, eventType: "NOTIFY", verifyStatus: "FAILED", message: "PAYMENT_CALLBACK_TOO_LARGE" });
         return context.text("failure", 400);
       }
-      const rawBodyBytes = provider === "PERPAY" ? new Uint8Array(await context.req.raw.arrayBuffer()) : undefined;
+      const rawBodyBytes = provider === "PERPAY" || provider === "WXPAY" ? new Uint8Array(await context.req.raw.arrayBuffer()) : undefined;
       const rawBody = rawBodyBytes ? new TextDecoder().decode(rawBodyBytes) : await context.req.text();
       let payload: Record<string, string>;
       try {
