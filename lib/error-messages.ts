@@ -192,6 +192,11 @@ export const errorMessages: Record<string, string> = {
   ALIPAY_NOTIFY_URL_REQUIRED: "支付宝回调地址未配置。",
   ALIPAY_PRIVATE_KEY_INVALID: "支付宝应用私钥格式无效。",
   ALIPAY_PUBLIC_KEY_INVALID: "支付宝公钥格式无效。",
+  WXPAY_CREATE_FAILED: "微信支付请求创建失败，请稍后重试。",
+  WXPAY_PUBLIC_KEY_INVALID: "微信支付公钥配置无效。",
+  WXPAY_SIGNATURE_INVALID: "微信支付回调签名校验失败。",
+  WXPAY_CALLBACK_INVALID: "微信支付回调数据无效。",
+  WXPAY_QUERY_FAILED: "微信支付订单查询失败，请稍后重试。",
 
   PRODUCT_NOT_AVAILABLE: "商品已下架或不可购买。",
   PRODUCT_STOCK_NOT_ENOUGH: "库存不足，请调整数量后重试。",
