@@ -59,7 +59,19 @@ export type PerpayConfig = {
   returnUrl: string;
 };
 
-export type PaymentProviderConfig = AlipayConfig | EpayConfig | BepusdtConfig | StripeConfig | HashpayConfig | PerpayConfig;
+export type WxpayConfig = {
+  schemaVersion: 1;
+  appId: string;
+  mchid: string;
+  apiV3Key: string;
+  merchantSerialNo: string;
+  privateKey: string;
+  wxpayPublicKey: string;
+  notifyUrl: string;
+  returnUrl: string;
+};
+
+export type PaymentProviderConfig = AlipayConfig | EpayConfig | BepusdtConfig | StripeConfig | HashpayConfig | PerpayConfig | WxpayConfig;
 
 export type EmailProviderConfig =
   | { kind: "smtp"; host: string; port: number; secure: boolean; username: string; password: string; authType?: "plain" | "login" | "cram-md5"; from: string; fromName?: string; replyTo?: string }
@@ -245,6 +257,22 @@ export function parsePerpayConfig(json: string): PerpayConfig {
     baseUrl: parsed.origin,
     apiSecret: requirePerpaySecret(value.apiSecret, "apiSecret"),
     webhookSecret: requirePerpaySecret(value.webhookSecret, "webhookSecret"),
+    notifyUrl: requirePaymentUrl(value.notifyUrl, "notifyUrl", true),
+    returnUrl: requirePaymentUrl(value.returnUrl, "returnUrl", true),
+  };
+}
+
+export function parseWxpayConfig(json: string): WxpayConfig {
+  const value = parseJsonObject(json, "Wxpay");
+  requireSchemaVersion(value, "schemaVersion");
+  return {
+    schemaVersion: 1,
+    appId: requireString(value.appId, "appId"),
+    mchid: requireString(value.mchid, "mchid"),
+    apiV3Key: requireString(value.apiV3Key, "apiV3Key"),
+    merchantSerialNo: requireString(value.merchantSerialNo, "merchantSerialNo"),
+    privateKey: requireString(value.privateKey, "privateKey"),
+    wxpayPublicKey: requireString(value.wxpayPublicKey, "wxpayPublicKey"),
     notifyUrl: requirePaymentUrl(value.notifyUrl, "notifyUrl", true),
     returnUrl: requirePaymentUrl(value.returnUrl, "returnUrl", true),
   };
