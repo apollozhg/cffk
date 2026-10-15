@@ -93,7 +93,7 @@ const resumingPayment = ref(false);
 
 const activeOrderNo = ref("");
 const orderNoInput = ref(requestedOrderNo);
-const isFaceToFacePayment = computed(() => result.value?.paymentChannel === "face_to_face");
+const isFaceToFacePayment = computed(() => result.value?.paymentChannel === "face_to_face" || result.value?.paymentProvider === "WXPAY");
 
 function submitQuery() {
   const orderNo = orderNoInput.value.trim();
