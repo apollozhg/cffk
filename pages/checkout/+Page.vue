@@ -117,6 +117,6 @@ async function resumePayment() {
   } catch (cause) { error.value = userErrorMessage(cause, "暂时无法生成支付二维码，请稍后再试。"); } finally { resuming.value = false; }
 }
 function paymentStatusLabel(status: PublicOrder["paymentStatus"]) { return { UNPAID: "待支付", PAID: "已支付", FAILED: "支付失败" }[status]; }
-function isQrPaymentOrder(record: PublicOrder) { return record.paymentProvider === "PERPAY" || (record.paymentProvider === "ALIPAY" && record.paymentChannel === "face_to_face"); }
+function isQrPaymentOrder(record: PublicOrder) { return record.paymentProvider === "PERPAY" || record.paymentProvider === "WXPAY" || (record.paymentProvider === "ALIPAY" && record.paymentChannel === "face_to_face"); }
 function isPerpayQrPaymentOrder(record: PublicOrder) { return record.paymentProvider === "PERPAY"; }
 </script>
