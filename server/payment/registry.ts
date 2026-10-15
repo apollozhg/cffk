@@ -8,10 +8,11 @@ import {
   parseHashpayConfig,
   parsePerpayConfig,
   parseStripeConfig,
+  parseWxpayConfig,
   type PaymentProviderConfig,
 } from "@/lib/config-schemas";
 
-export type PaymentProviderKind = "ALIPAY" | "EPAY" | "BEPUSDT" | "STRIPE" | "HASHPAY" | "PERPAY";
+export type PaymentProviderKind = "ALIPAY" | "EPAY" | "BEPUSDT" | "STRIPE" | "HASHPAY" | "PERPAY" | "WXPAY";
 export type PaymentChannel = "web" | "wap" | "face_to_face" | "alipay" | "wxpay";
 
 
@@ -115,6 +116,21 @@ export const paymentProviderDefinitions: Record<PaymentProviderKind, ProviderDef
     defaults: { schemaVersion: 1, baseUrl: "", apiSecret: "", webhookSecret: "", notifyUrl: "", returnUrl: "" },
     parseConfig: parsePerpayConfig, getChannels: () => [], createAdapter: (config) => createProviderAdapter("PERPAY", config), callbackResponse: "json",
   },
+  WXPAY: {
+    provider: "WXPAY", title: "微信支付", schemaVersion: 1,
+    fields: [
+      { key: "appId", label: "AppID", type: "text", required: true },
+      { key: "mchid", label: "商户号", type: "text", required: true },
+      { key: "apiV3Key", label: "APIv3 密钥（32 位）", type: "password", required: true, secret: true },
+      { key: "merchantSerialNo", label: "商户证书序列号", type: "text", required: true },
+      { key: "privateKey", label: "商户 API 私钥（PKCS#8）", type: "textarea", required: true, secret: true },
+      { key: "wxpayPublicKey", label: "微信支付公钥", type: "textarea", required: true, secret: true },
+      common.notifyUrl,
+      common.returnUrl,
+    ],
+    defaults: { schemaVersion: 1, appId: "", mchid: "", apiV3Key: "", merchantSerialNo: "", privateKey: "", wxpayPublicKey: "", notifyUrl: "", returnUrl: "" },
+    parseConfig: parseWxpayConfig, getChannels: () => ["wxpay"], createAdapter: (config) => createProviderAdapter("WXPAY", config), callbackResponse: "json",
+  },
 };
 
 const paymentNotifyPaths: Partial<Record<PaymentProviderKind, string>> = {
@@ -124,6 +140,7 @@ const paymentNotifyPaths: Partial<Record<PaymentProviderKind, string>> = {
   STRIPE: "/api/payments/stripe/notify",
   HASHPAY: "/api/payments/hashpay/notify",
   PERPAY: "/api/payments/perpay/notify",
+  WXPAY: "/api/payments/wxpay/notify",
 };
 
 export function getProviderDefinition(provider: string) {
