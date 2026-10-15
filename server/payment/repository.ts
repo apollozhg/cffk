@@ -27,10 +27,10 @@ export function paymentRepository(database: D1Database) {
     },
     async findMatchingAttempt(orderId: number, provider: string, paymentOrderNo?: string) {
       const conditions = [eq(paymentAttempt.orderId, orderId), eq(paymentAttempt.provider, provider), or(eq(paymentAttempt.status, "PENDING"), eq(paymentAttempt.status, "PAID"))];
-      // Alipay and Epay return their platform trade number in callbacks, while
-      // creation records the merchant order number. Their signed merchant
+      // Alipay, Epay and Wxpay return their platform trade number in callbacks,
+      // while creation records the merchant order number. Their signed merchant
       // order number, provider and amount are verified by the callback flow.
-      if (paymentOrderNo && provider !== "ALIPAY" && provider !== "EPAY") conditions.push(eq(paymentAttempt.paymentOrderNo, paymentOrderNo));
+      if (paymentOrderNo && provider !== "ALIPAY" && provider !== "EPAY" && provider !== "WXPAY") conditions.push(eq(paymentAttempt.paymentOrderNo, paymentOrderNo));
       const [record] = await db.select().from(paymentAttempt).where(and(...conditions)).orderBy(desc(paymentAttempt.id)).limit(1);
       return record ?? null;
     },
