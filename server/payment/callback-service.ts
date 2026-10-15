@@ -74,6 +74,7 @@ export class PaymentCallbackService {
 
   private response(provider: PaymentProviderKind, ok: boolean, metadata?: { headers?: Headers }) {
     if (provider === "PERPAY") return { body: JSON.stringify({ schema: "perpay:webhook-ack:v1", ack: ok, event_id: metadata?.headers?.get("X-PerPay-Webhook-Event-Id") ?? "", delivery_id: metadata?.headers?.get("X-PerPay-Webhook-Delivery-Id") ?? "" }), contentType: "application/json", status: ok ? 200 : 400 };
+    if (provider === "WXPAY") return { body: JSON.stringify({ code: ok ? "SUCCESS" : "FAIL", message: ok ? "成功" : "失败" }), contentType: "application/json", status: ok ? 200 : 400 };
     return paymentCallbackResponse(ok);
   }
 }
