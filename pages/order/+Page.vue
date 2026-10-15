@@ -210,7 +210,7 @@ const activeQuery = ref<{ orderNo: string; email?: string } | null>(null);
 const clearTarget = ref<string | null | undefined>(undefined);
 const recoveryChallengeId = ref("");
 const recoveryTruncated = ref(false);
-const isFaceToFacePayment = computed(() => result.value?.paymentChannel === "face_to_face");
+const isFaceToFacePayment = computed(() => result.value?.paymentChannel === "face_to_face" || result.value?.paymentProvider === "WXPAY");
 
 const { handleSubmit, isSubmitting: querySubmitting, setFieldValue } = useForm({
   validationSchema: toTypedSchema(z.object({
