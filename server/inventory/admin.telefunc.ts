@@ -233,6 +233,60 @@ async function internalOnGetCardContent(input: { id: number }) {
   return row;
 }
 
+async function internalOnSetCardStatus(input: { id: number; status: "DISABLED" | "UNUSED" | "SOLD" }) {
+  const { db } = getAdminDb();
+  const id = positiveInteger(input.id, "CARD_ID");
+  const target = input.status;
+  if (!["DISABLED", "UNUSED", "SOLD"].includes(target)) appError("CARD_STATUS_INVALID");
+
+  const [row] = await db.select({ id: card.id, status: card.status, orderId: card.orderId })
+    .from(card).where(eq(card.id, id)).limit(1);
+  if (!row) appError("CARD_NOT_FOUND");
+
+  // 禁用：仅允许 UNUSED / SOLD → DISABLED；恢复：仅允许 DISABLED 回退（已售回 SOLD，未售回 UNUSED）
+  if (target === "DISABLED") {
+    if (row.status === "DISABLED") appError("CARD_STATUS_CHANGE_REJECTED");
+  } else {
+    if (row.status !== "DISABLED") appError("CARD_STATUS_CHANGE_REJECTED");
+  }
+  // 恢复时按是否有订单归属回退原状态（已售出卡密禁用后恢复为 SOLD，未售出恢复为 UNUSED）
+  const nextStatus = target === "DISABLED" ? "DISABLED" : (row.orderId ? "SOLD" : "UNUSED");
+
+  const now = new Date();
+  const [updated] = await db.update(card)
+    .set({ status: nextStatus, updatedAt: now })
+    .where(eq(card.id, id))
+    .returning({ id: card.id, status: card.status });
+  return updated;
+}
+
+async function internalOnExportCards(input: CardAdminQuery = {}) {
+  const { database, db } = requireAdmin();
+  const timezone = (await getSiteSettings(database)).timezone;
+  const batchNo = input.batchNo?.trim();
+  const conditions = [
+    input.productId ? eq(card.productId, input.productId) : undefined,
+    input.status ? eq(card.status, input.status) : undefined,
+    batchNo ? like(card.batchNo, `%${batchNo}%`) : undefined,
+    input.startDate ? gte(card.createdAt, parseDateBoundary(input.startDate, timezone, false)) : undefined,
+    input.endDate ? lt(card.createdAt, parseDateBoundary(input.endDate, timezone, true)) : undefined,
+  ].filter((condition): condition is NonNullable<typeof condition> => Boolean(condition));
+  const where = conditions.length ? and(...conditions) : undefined;
+
+  const rows = await db
+    .select({ id: card.id, content: card.content, status: card.status, productName: productV2.name })
+    .from(card)
+    .innerJoin(productV2, eq(card.productId, productV2.id))
+    .where(where)
+    .orderBy(desc(card.id))
+    .limit(5001);
+  if (rows.length > 5000) appError("CARD_EXPORT_LIMIT_EXCEEDED");
+  return {
+    exported: rows.length,
+    text: rows.map((r) => r.content).join("\n"),
+  };
+}
+
 export const onGetCardAdminData = telefuncAction(internalOnGetCardAdminData);
 export const onCreateCard = telefuncAction(internalOnCreateCard);
 export const onImportCards = telefuncAction(internalOnImportCards);
@@ -240,3 +294,5 @@ export const onDeleteCard = telefuncAction(internalOnDeleteCard);
 export const onDeleteUnusedCards = telefuncAction(internalOnDeleteUnusedCards);
 export const onGenerateCards = telefuncAction(internalOnGenerateCards);
 export const onGetCardContent = telefuncAction(internalOnGetCardContent);
+export const onSetCardStatus = telefuncAction(internalOnSetCardStatus);
+export const onExportCards = telefuncAction(internalOnExportCards);
