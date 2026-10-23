@@ -4,6 +4,7 @@ import type { createDrizzleDb } from "@/database/drizzle";
 import { appError } from "@/lib/app-error";
 import { requireAdmin } from "@/server/telefunc-context";
 import { card, productV2, productSku } from "@/database/drizzle/schema";
+import { generateUnboundCardKeys, getCardSecret, getCardSignerConfig } from "@/server/inventory/card-generator";
 
 import { getSiteSettings } from "@/server/site/public-settings";
 import { dateBoundaryInTimezone } from "@/lib/site-timezone";
@@ -190,8 +191,52 @@ async function internalOnDeleteUnusedCards(input: { productId: number }) {
   return { deleted: deleted.length };
 }
 
+function defaultGenBatchNo() {
+  const d = new Date();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `GEN-${d.getFullYear()}${pad(d.getMonth() + 1)}${pad(d.getDate())}${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}`;
+}
+
+async function internalOnGenerateCards(input: { productId: number; productSkuId: number; count: number; batchNo?: string }) {
+  const { database, db } = requireAdmin();
+  const productId = positiveInteger(input.productId, "PRODUCT_ID");
+  const productSkuId = await resolveCardSku(db, productId, input.productSkuId);
+  const count = positiveInteger(input.count, "CARD_GENERATE_COUNT");
+  if (count > 500) appError("CARD_GENERATE_LIMIT_EXCEEDED");
+  // 未填批次号时自动生成 GEN-年月日时分秒，便于按批次追踪同一次生成的卡密。
+  const batchNo = input.batchNo?.trim() || defaultGenBatchNo();
+
+  const [product] = await db.select({ slug: productV2.slug }).from(productV2).where(eq(productV2.id, productId)).limit(1);
+  if (!product) appError("PRODUCT_NOT_FOUND");
+  const config = getCardSignerConfig(product.slug);
+  const secret = getCardSecret(config.secretEnvName);
+  const keys = await generateUnboundCardKeys(db, productId, count, config.prefix, secret);
+
+  const now = Date.now();
+  const statement = database.prepare(
+    `INSERT INTO card (productId, productSkuId, content, status, batchNo, createdAt, updatedAt)
+     VALUES (?, ?, ?, 'UNUSED', ?, ?, ?)`,
+  );
+  for (let offset = 0; offset < keys.length; offset += 50) {
+    const chunk = keys.slice(offset, offset + 50);
+    await database.batch(chunk.map((content) => statement.bind(productId, productSkuId, content, batchNo, now, now)));
+  }
+  return { generated: keys.length, batchNo };
+}
+
+async function internalOnGetCardContent(input: { id: number }) {
+  const { db } = getAdminDb();
+  const id = positiveInteger(input.id, "CARD_ID");
+  const [row] = await db.select({ id: card.id, content: card.content, status: card.status })
+    .from(card).where(eq(card.id, id)).limit(1);
+  if (!row) appError("CARD_NOT_FOUND");
+  return row;
+}
+
 export const onGetCardAdminData = telefuncAction(internalOnGetCardAdminData);
 export const onCreateCard = telefuncAction(internalOnCreateCard);
 export const onImportCards = telefuncAction(internalOnImportCards);
 export const onDeleteCard = telefuncAction(internalOnDeleteCard);
 export const onDeleteUnusedCards = telefuncAction(internalOnDeleteUnusedCards);
+export const onGenerateCards = telefuncAction(internalOnGenerateCards);
+export const onGetCardContent = telefuncAction(internalOnGetCardContent);
