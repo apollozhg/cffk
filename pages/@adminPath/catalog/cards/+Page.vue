@@ -20,7 +20,9 @@ import {
   onCreateCard,
   onDeleteCard,
   onDeleteUnusedCards,
+  onGenerateCards,
   onGetCardAdminData,
+  onGetCardContent,
   onImportCards,
 } from "@/server/inventory/admin.telefunc";
 
@@ -51,6 +53,7 @@ const filters = reactive({
 });
 const singleForm = reactive({ productId: undefined as number | undefined, productSkuId: undefined as number | undefined, batchNo: "", content: "" });
 const importForm = reactive({ productId: undefined as number | undefined, productSkuId: undefined as number | undefined, batchNo: "", content: "" });
+const generateForm = reactive({ productId: undefined as number | undefined, productSkuId: undefined as number | undefined, count: 100, batchNo: "" });
 const page = ref(1);
 const pageSize = ref(10);
 const loading = ref(false);
@@ -58,9 +61,14 @@ const saving = ref(false);
 
 const addDialogOpen = ref(false);
 const importDialogOpen = ref(false);
+const generateDialogOpen = ref(false);
 const deleteDialogOpen = ref(false);
 const clearDialogOpen = ref(false);
+const viewDialogOpen = ref(false);
 const cardToDelete = ref<CardRow | null>(null);
+const cardToView = ref<CardRow | null>(null);
+const fullContent = ref("");
+const copying = ref(false);
 
 const total = computed(() => data.total);
 const dateRange = computed({ get: () => ({ start: filters.startDate, end: filters.endDate }), set: (value: { start: string; end: string }) => { filters.startDate = value.start; filters.endDate = value.end; } });
@@ -150,11 +158,58 @@ async function importCards() {
     importForm.content = "";
     importDialogOpen.value = false;
 
+    page.value = 1;
     await loadCards();
   } catch {
     // runTelefunc has already displayed the normalized error toast.
   } finally {
     saving.value = false;
+  }
+}
+
+async function generateCards() {
+  saving.value = true;
+  const count = Number(generateForm.count) || 1;
+  
+  try {
+    const result = await runTelefunc(() => onGenerateCards({ ...generateForm, productId: generateForm.productId!, count }), { successMessage: `已生成 ${count} 条卡密。` });
+    if (result.batchNo) toast.info(`批次号：${result.batchNo}，可在列表按批次筛选。`);
+    generateForm.productSkuId = undefined;
+    generateForm.batchNo = "";
+    generateForm.count = 100;
+    generateDialogOpen.value = false;
+
+    page.value = 1;
+    await loadCards();
+  } catch {
+    // runTelefunc has already displayed the normalized error toast.
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function viewCardContent(card: CardRow) {
+  cardToView.value = card;
+  fullContent.value = "";
+  viewDialogOpen.value = true;
+  try {
+    const result = await runTelefunc(() => onGetCardContent({ id: card.id }));
+    fullContent.value = result.content;
+  } catch {
+    // runTelefunc has already displayed the normalized error toast.
+  }
+}
+
+async function copyCardContent() {
+  if (!fullContent.value) return;
+  copying.value = true;
+  try {
+    await navigator.clipboard.writeText(fullContent.value);
+    toast.success("卡密已复制到剪贴板。");
+  } catch {
+    toast.error("复制失败，请手动选择复制。");
+  } finally {
+    copying.value = false;
   }
 }
 
@@ -237,8 +292,9 @@ function formatDate(value: Date) {
           <div class="flex flex-wrap items-center gap-2">
             <Button variant="outline" size="sm" :disabled="loading" @click="loadCards"><RefreshCwIcon :class="loading ? 'animate-spin' : ''" />刷新</Button>
             <Button variant="outline" size="sm" class="border-destructive/30 text-destructive hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive" @click="requestClearUnused"><Trash2Icon />清空未售库存</Button>
+            <Button size="sm" @click="generateDialogOpen = true">批量生成</Button>
             <Button variant="outline" size="sm" @click="addDialogOpen = true"><PlusIcon />新增卡密</Button>
-            <Button size="sm" @click="importDialogOpen = true"><UploadIcon />批量导入</Button>
+            <Button variant="outline" size="sm" @click="importDialogOpen = true"><UploadIcon />批量导入</Button>
           </div>
         </div>
         <div class="flex w-full flex-wrap items-center gap-3 lg:w-[70%]">
@@ -263,7 +319,12 @@ function formatDate(value: Date) {
           <template #cell-status="{ row }"><Badge :variant="statusVariant(row.status as CardStatus)">{{ statusLabel(row.status as CardStatus) }}</Badge></template>
           <template #cell-orderId="{ value }">{{ value ? `#${value}` : "-" }}</template>
           <template #cell-createdAt="{ value }">{{ formatDate(value as Date) }}</template>
-          <template #actions="{ row }"><Button variant="ghost" size="sm" class="text-destructive hover:text-destructive" :disabled="row.status !== 'UNUSED'" :title="row.status === 'UNUSED' ? '删除未售出卡密' : '仅可删除未售出的卡密'" @click="requestDelete(row)"><Trash2Icon />删除</Button></template>
+          <template #actions="{ row }">
+            <div class="flex items-center gap-1">
+              <Button variant="ghost" size="sm" :disabled="copying" :title="'查看完整卡密'" @click="viewCardContent(row)">查看</Button>
+              <Button variant="ghost" size="sm" class="text-destructive hover:text-destructive" :disabled="row.status !== 'UNUSED'" :title="row.status === 'UNUSED' ? '删除未售出卡密' : '仅可删除未售出的卡密'" @click="requestDelete(row)"><Trash2Icon />删除</Button>
+            </div>
+          </template>
           <template #pagination><Pagination :total="total" :page="page" :page-size="pageSize" :page-size-options="[10, 20, 50, 100]" @update:page="changePageTo" @update:page-size="changePageSize" /></template>
         </AdminDataTable>
       </CardContent>
@@ -303,6 +364,23 @@ function formatDate(value: Date) {
       </DialogContent>
     </Dialog>
 
+    <Dialog v-model:open="generateDialogOpen">
+      <DialogContent class="grid max-h-[calc(100vh-2rem)] max-w-xl grid-rows-[auto_minmax(0,1fr)] overflow-hidden p-0">
+        <DialogHeader class="border-b px-6 py-5 pr-8"><DialogTitle>批量生成卡密</DialogTitle><DialogDescription>按播放器注册码算法生成未售出的卡密并直接入库，无需再手工导入。</DialogDescription></DialogHeader>
+        <form class="grid min-h-0 grid-rows-[minmax(0,1fr)_auto]" @submit.prevent="generateCards">
+          <div class="min-h-0 overflow-y-auto px-6 py-5">
+            <div class="grid gap-4">
+              <label class="grid gap-2 text-sm font-medium"><span class="flex items-center gap-1"><span class="text-destructive">*</span> 商品</span><Select :model-value="generateForm.productId === undefined ? undefined : String(generateForm.productId)" @update:model-value="selectCardProduct(generateForm, $event)"><SelectTrigger><SelectValue placeholder="选择自动卡密商品" /></SelectTrigger><SelectContent><SelectItem v-for="item in data.products" :key="item.id" :value="String(item.id)">{{ item.name }}</SelectItem></SelectContent></Select></label>
+              <label class="grid gap-2 text-sm font-medium">SKU<Select :model-value="generateForm.productSkuId === undefined ? undefined : String(generateForm.productSkuId)" @update:model-value="generateForm.productSkuId = Number($event)"><SelectTrigger><SelectValue placeholder="选择 SKU" /></SelectTrigger><SelectContent><SelectItem v-for="sku in data.products.find((item) => item.id === generateForm.productId)?.skus ?? []" :key="sku.id" :value="String(sku.id)">{{ sku.name }}</SelectItem></SelectContent></Select></label>
+              <label class="grid gap-2 text-sm font-medium"><span class="flex items-center gap-1"><span class="text-destructive">*</span> 生成数量</span><Input v-model.number="generateForm.count" type="number" min="1" max="500" required /><span class="text-xs font-normal text-muted-foreground">单次最多 500 条。</span></label>
+              <label class="grid gap-2 text-sm font-medium">批次号（可选）<Input v-model="generateForm.batchNo" placeholder="例如：20261016-01" /><span class="text-xs font-normal text-muted-foreground">用于按批次筛选和追踪同一次生成的卡密；留空将自动生成批次号（如 GEN-20261016123456）。</span></label>
+            </div>
+          </div>
+          <DialogFooter class="border-t bg-background px-6 py-4"><DialogClose as-child><Button type="button" variant="outline">取消</Button></DialogClose><Button type="submit" :disabled="saving || !generateForm.productId">批量生成</Button></DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+
     <Dialog v-model:open="deleteDialogOpen">
       <DialogContent class="max-w-md">
         <DialogHeader class="pr-8"><DialogTitle>删除未售出卡密？</DialogTitle><DialogDescription>此操作不可恢复。卡密 #{{ cardToDelete?.id }} 将被永久删除。</DialogDescription></DialogHeader>
@@ -314,6 +392,17 @@ function formatDate(value: Date) {
       <DialogContent class="max-w-md">
         <DialogHeader class="pr-8"><DialogTitle>清空未售库存？</DialogTitle><DialogDescription>将永久删除“{{ selectedProductName }}”的所有未售出卡密。此操作不可恢复。</DialogDescription></DialogHeader>
         <DialogFooter><DialogClose as-child><Button variant="outline">取消</Button></DialogClose><Button variant="destructive" :disabled="saving" @click="clearUnusedCards">确认清空</Button></DialogFooter>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog v-model:open="viewDialogOpen">
+      <DialogContent class="max-w-md">
+        <DialogHeader class="pr-8"><DialogTitle>查看卡密</DialogTitle><DialogDescription>卡密 #{{ cardToView?.id }} · {{ cardToView ? statusLabel(cardToView.status as CardStatus) : "" }} · {{ cardToView?.productName }} / {{ cardToView?.productSkuName }}</DialogDescription></DialogHeader>
+        <div class="px-6 pb-2">
+          <div class="rounded-md border bg-muted/50 px-4 py-3 font-mono text-sm tracking-wide break-all select-all">{{ fullContent || "加载中…" }}</div>
+          <p class="mt-2 text-xs text-muted-foreground">该卡密为播放器可直接激活的注册码；复制后请通过私信等安全渠道交付给买家。</p>
+        </div>
+        <DialogFooter class="border-t bg-background px-6 py-4"><DialogClose as-child><Button type="button" variant="outline">关闭</Button></DialogClose><Button :disabled="!fullContent || copying" @click="copyCardContent">{{ copying ? "复制中…" : "复制卡密" }}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
   </section>
