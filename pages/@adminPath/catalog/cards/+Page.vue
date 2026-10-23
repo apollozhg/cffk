@@ -20,10 +20,12 @@ import {
   onCreateCard,
   onDeleteCard,
   onDeleteUnusedCards,
+  onExportCards,
   onGenerateCards,
   onGetCardAdminData,
   onGetCardContent,
   onImportCards,
+  onSetCardStatus,
 } from "@/server/inventory/admin.telefunc";
 
 type CardData = Awaited<ReturnType<typeof onGetCardAdminData>>;
@@ -65,10 +67,13 @@ const generateDialogOpen = ref(false);
 const deleteDialogOpen = ref(false);
 const clearDialogOpen = ref(false);
 const viewDialogOpen = ref(false);
+const statusDialogOpen = ref(false);
+const statusTarget = ref<CardRow | null>(null);
 const cardToDelete = ref<CardRow | null>(null);
 const cardToView = ref<CardRow | null>(null);
 const fullContent = ref("");
 const copying = ref(false);
+const exporting = ref(false);
 
 const total = computed(() => data.total);
 const dateRange = computed({ get: () => ({ start: filters.startDate, end: filters.endDate }), set: (value: { start: string; end: string }) => { filters.startDate = value.start; filters.endDate = value.end; } });
@@ -259,6 +264,52 @@ async function clearUnusedCards() {
   }
 }
 
+function requestSetStatus(card: CardRow) {
+  statusTarget.value = card;
+  statusDialogOpen.value = true;
+}
+
+async function confirmSetStatus() {
+  if (!statusTarget.value) return;
+  saving.value = true;
+  const row = statusTarget.value;
+  const targetStatus = row.status === "DISABLED" ? "UNUSED" : "DISABLED";
+
+  try {
+    await runTelefunc(() => onSetCardStatus({ id: row.id, status: targetStatus }), {
+      successMessage: targetStatus === "DISABLED" ? "卡密已禁用。" : "卡密已恢复。",
+    });
+    statusDialogOpen.value = false;
+    statusTarget.value = null;
+    await loadCards();
+  } catch {
+    // runTelefunc has already displayed the normalized error toast.
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function exportCards() {
+  exporting.value = true;
+  try {
+    const result = await runTelefunc(() => onExportCards({ ...filters, page: 1, pageSize: 5000 }), { successMessage: `已导出 ${result.exported} 条卡密。` });
+    const blob = new Blob([result.text], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    const stamp = new Date().toISOString().slice(0, 10);
+    a.href = url;
+    a.download = `卡密导出_${stamp}_${result.exported}条.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch {
+    // runTelefunc has already displayed the normalized error toast.
+  } finally {
+    exporting.value = false;
+  }
+}
+
 function statusLabel(status: CardStatus) {
   return { UNUSED: "未售出", SOLD: "已售出", DISABLED: "已禁用" }[status];
 }
@@ -291,6 +342,7 @@ function formatDate(value: Date) {
           <div><CardTitle>库存列表</CardTitle><CardDescription class="mt-1">按商品、状态、批次及创建时间查找卡密。</CardDescription></div>
           <div class="flex flex-wrap items-center gap-2">
             <Button variant="outline" size="sm" :disabled="loading" @click="loadCards"><RefreshCwIcon :class="loading ? 'animate-spin' : ''" />刷新</Button>
+            <Button variant="outline" size="sm" :disabled="exporting || loading" @click="exportCards">{{ exporting ? "导出中…" : "导出卡密" }}</Button>
             <Button variant="outline" size="sm" class="border-destructive/30 text-destructive hover:border-destructive/50 hover:bg-destructive/10 hover:text-destructive" @click="requestClearUnused"><Trash2Icon />清空未售库存</Button>
             <Button size="sm" @click="generateDialogOpen = true">批量生成</Button>
             <Button variant="outline" size="sm" @click="addDialogOpen = true"><PlusIcon />新增卡密</Button>
@@ -322,6 +374,7 @@ function formatDate(value: Date) {
           <template #actions="{ row }">
             <div class="flex items-center gap-1">
               <Button variant="ghost" size="sm" :disabled="copying" :title="'查看完整卡密'" @click="viewCardContent(row)">查看</Button>
+              <Button variant="ghost" size="sm" :disabled="saving" :title="row.status === 'DISABLED' ? '恢复该卡密为可用状态' : '禁用该卡密（已售出的也可禁用，用于退款/作废）'" @click="requestSetStatus(row)">{{ row.status === "DISABLED" ? "恢复" : "禁用" }}</Button>
               <Button variant="ghost" size="sm" class="text-destructive hover:text-destructive" :disabled="row.status !== 'UNUSED'" :title="row.status === 'UNUSED' ? '删除未售出卡密' : '仅可删除未售出的卡密'" @click="requestDelete(row)"><Trash2Icon />删除</Button>
             </div>
           </template>
@@ -378,6 +431,17 @@ function formatDate(value: Date) {
           </div>
           <DialogFooter class="border-t bg-background px-6 py-4"><DialogClose as-child><Button type="button" variant="outline">取消</Button></DialogClose><Button type="submit" :disabled="saving || !generateForm.productId">批量生成</Button></DialogFooter>
         </form>
+      </DialogContent>
+    </Dialog>
+
+    <Dialog v-model:open="statusDialogOpen">
+      <DialogContent class="max-w-md">
+        <DialogHeader class="pr-8">
+          <DialogTitle>{{ statusTarget?.status === "DISABLED" ? "恢复卡密？" : "禁用卡密？" }}</DialogTitle>
+          <DialogDescription v-if="statusTarget?.status === 'DISABLED'">卡密 #{{ statusTarget?.id }} 将恢复为可用状态（已售出的恢复为已售出，未售出的恢复为未售出）。</DialogDescription>
+          <DialogDescription v-else>卡密 #{{ statusTarget?.id }} 将被禁用，买家使用该卡密激活将被拒绝。此操作用于退款作废、封禁滥用等场景，可随时恢复。</DialogDescription>
+        </DialogHeader>
+        <DialogFooter><DialogClose as-child><Button variant="outline">取消</Button></DialogClose><Button :disabled="saving" @click="confirmSetStatus">{{ statusTarget?.status === "DISABLED" ? "确认恢复" : "确认禁用" }}</Button></DialogFooter>
       </DialogContent>
     </Dialog>
 
